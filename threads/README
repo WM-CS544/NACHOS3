@@ -1,0 +1,361 @@
+This README pertains to project one of Nachos
+Group Members: Aaron Wells, Alex Powell, Cody Watson
+
+###################################################################
+
+Files that have been created / changed from original nachos
+
+    elevator.cc - implements elevator solution
+    elevator.h
+    main.cc - manipulated for command line arguments
+    prodcon.cc - implements producer consumer solution
+    prodcon.h
+    traffic_manager.cc - contains traffic manager class for use in question 4
+    traffic_manager.h
+    resmanager.cc - added to supplement solutions
+    resmanager.h
+    synch.cc - implements locks and conditions
+    synch.h
+    threadtest.cc - holds code to run solutions given correct
+    argument parsing in main
+
+##################################################################
+
+Outline
+
+    Implementation notes for Locks and Conditions
+    Explanation of Output for Producer/Consumer Problem
+    Explanation of Output for Elevator Problem
+    Explanation of Output for Bridge Problem
+
+##################################################################
+
+Implementation of Locks and Conditions
+
+    The implementation of locks and conditions is important for
+    implementing solutions to problems that will access and change
+    global data.
+
+    The lock implementation can be found in synch.cc, a lock class
+    contains a constructor, destructor, and three methods which are
+    Acquire, Release and isHeldByCurrentThread.
+
+    A lock consists of a name (for debugging purposes), a value
+    (set to 1 or 0 depending on the availability of the lock), a
+    queue (will hold the thread that currently possesses the lock),
+    and a Thread variable which is used to determine the name of
+    the thread that has the lock.
+
+    When a thread acquires a lock, interrupts are turned off, and
+    the value is checked to determine if the lock is available.
+    If the lock is available, then the thread acquires the lock
+    (changing the value to 0) and sets the hasLock variable to
+    itself. If the lock is unavailable, then the thread is
+    appended to a queue and put to sleep awaiting the lock.
+    Lastly interrupts are turned back on so the system can
+    continue to function properly.
+
+    When a thread releases a lock, interrupts are turned off,
+    and a thread is removed from the queue. If there is in fact
+    a thread on the queue then that thread gets put into the ready
+    list. Lastly we check to insure that the thread releasing the
+    lock is the same thread that has the lock, change the value
+    back to 1 so the lock is available, and change our hasLock
+    variable back to NULL to signify no thread possesses the lock.
+
+    The condition implementation can be found in synch.cc, a synch
+    class contains a constructor, destructor and three methods
+    including Wait, Signal, and Broadcast. A condition consists of
+    a name for debugging purposes, and a queue to hold conditions.
+
+    When a thread waits it implies that it is willing to give up
+    the CPU to allow another process to run. To accomplish this
+    task we have the thread give up the lock and allow another
+    thread to access it. What we do is disable interrupts, we
+    call the release function so that the lock is released,
+    we append the thread that had the lock to the queue, cause
+    that thread to sleep, and eventually reacquire the lock.
+
+    When a thread calls signal it implies that the thread calling
+    signal is releasing the lock and it is waking up other threads
+    that may want to acquire the lock. In our implementation, we
+    remove a thread from the queue and place that thread on the
+    ready list. Broadcast is very similar to wait except rather
+    than waking up just one thread in the queue, we wake up
+    every thread that is waiting on that lock.
+
+##################################################################
+
+Explanation of Producer Consumer Output
+
+    The producer consumer solution can be run with the following
+    command:
+
+    ./threads/nachos -P 1 -rs 1
+
+    The -P indicates that we are running a problem from the
+    first assignment, the 1 correlates to the first problem
+    of producer/consumer, and the -rs 1 is an option argument
+    that sets the random seed with the number 1.
+
+    The output when that command is run is as follows:
+
+    Hello World
+    Hello World
+    Hello World
+    Hello World
+    Hello World
+    Hello World
+    Hello World
+    ...
+    
+    In this example we have 10 producer threads and 10 consumer threads. In our
+    implementation, we have the string "Hello World" as a global string that can be
+    accessed by the producer threads. The producer thread will acquire the lock and
+    then grab and check if the buffer is full, if the buffer is full then the producer will
+    wait until the buffer has an empty slot. Once the buffer has an empty slot the
+    producer will add a character to the buffer. The thread does this by accessing the
+    indexes that pertain to the buffer as well as the global Hello World string. After
+    the char has been added to the buffer, the indexes are moved and we increase
+    the count for the number of buffer slots that have data in them. The producer
+    then signals the consumer since there is available data and releases the lock.
+
+    The consumer threads interact with the buffer, pulling out data and printing
+    It to the screen. When a consumer thread runs it checks to see if the buffer is
+    empty, if it is, then the consumer waits until data is placed into the buffer. If the
+    buffer is not empty then it continues by gathering data from the buffer via a
+    global index. It then prints this character out to the screen and moves the index
+    in the buffer accordingly. Then the thread will decrement the number of characters
+    in the buffer, signal the producer threads since there is space within the buffer
+    and release the lock. 
+
+    This process will never print Hello World out of order since the access to the 
+    string and indexes are controlled by locks meaning only one thread can access
+    the indexes and string at one time. For example, if thread one of the producer
+    threads add the H to the buffer, then the next producer thread will have to
+    add the e to the buffer. Likewise, the consumer threads will access the buffer
+    to print out the letters in sequential order thus getting a finished string of
+    Hello World. This helps prove that consumers are not over consuming (letter would not
+	be consumed correctly) and producers are not over producing (also letters would not
+	be in order)
+
+###################################################################
+
+Explanation of Elevator Problem Output
+
+    The elevator problem can be run with the following command:
+    ./threads/nachos/ -P 3 -rs 1
+
+    The output is as follows:
+
+    curFloor
+    curDirection 1
+    no one using the elevator, going to sleep
+    +++++ new passenger: at floor: 2, to floor: 4
+    passenger acquired lock
+    elevator requested, waking up
+    moving to floor:1
+    =================================================
+    curFloor 1
+    curDirection 1
+    moving to floor:2
+    =================================================
+    curFloor 2
+    curDirection 1
+    waiting for 1 to board on current floor
+    getting on elevator
+    everyone on current floor is on the elevator
+    moving to floor:3
+    =================================================
+    curFloor 3
+    curDirection 1
+    moving to floor:4
+    =================================================
+    curFloor 4
+    curDirection 1
+    elevator waiting for 1 to exit
+    getting off elevator
+    ----- thread 10 arrived at floor
+    everyone exited current floor
+    no one using the elevator, going to sleep
+    +++++ new passenger: at floor: 3, to floor: 2
+    passenger acquired lock
+    elevator requested, waking up
+    moving to floor:3
+    =================================================
+    curFloor 3
+    curDirection -1
+    waiting for 1 to board on current floor
+    getting on elevator
+    everyone on current floor is on the elevator
+    moving to floor:2
+    =================================================
+    curFloor 2
+    curDirection -1
+    elevator waiting for 1 to exit
+    getting off elevator
+    ----- thread 13 arrived at floor
+    everyone exited current floor
+    no one using the elevator, going to sleep
+    +++++ new passenger: at floor: 3, to floor: 1
+    passenger acquired lock
+    elevator requested, waking up
+    moving to floor:3
+    =================================================
+
+    In our implementation of the elevator problem, the elevator
+    is a separate thread, along with the people that ask to have
+    access to the elevator. This is why in the beginning we state
+    that no one is using the elevator and thus the elevator is
+    going to sleep, awaiting a request to be moved. Then a person
+    hits the button and requests to ride the elevator, to do this,
+    they must obtain the lock and their requests gets added to a
+    global queue. After the request is made, the person thread
+    releases the lock and the elevator is woken up so that it can
+    begin to move.
+
+    We then print out a message which describes the state,
+    direction and the floor the elevator is moving to. In
+    this example the state is the elevator being at floor 1,
+    the direction (1 for up -1 for down) is moving up, and the
+    next floor the elevator is headed toward is floor 2. When
+    the elevator arrives at floor 2 only one request has been
+    made, thus the elevator only picks up one person. We then
+    wait for that person to get on the elevator, make sure we
+    have picked up everyone that made a request on that floor,
+    and then begin to move toward the floor that the person
+    (thread) asked to be moved to.
+
+    As we move toward floor 4 we must pass floor 3, however, no
+    request has been made for the elevator to stop at floor 3.
+    Therefore, in our implementation, the elevator will see that
+    no one is on that floor and will continue to floor 4. Once we
+    have gotten to floor 4 the elevator releases the lock, wakes
+    up the person riding the elevator that needs to get off on this
+    floor and sleeps since no one is currently riding on it.
+
+    For clarity I will continue to describe the next person getting
+    on the elevator solely in terms of locks and conditions.
+    Currently the elevator is sleeping on floor 4 after dropping
+    off thread 10. As shown by our output, thread 13 acquires the
+    lock and makes a request, putting themselves on a queue. After
+    they have made this request, they release the lock and sleep on
+    their condition. The elevator then is woken up by the person
+    and acquires the lock. The elevator then releases the lock in
+    case another request is made along the way. There is no request
+    made before the elevator moves to floor 3 where the elevator
+    reacquires the lock and checks to see how many people requested
+    to be on the elevator at floor 3. It sees that 1 person is
+    waiting so it releases the lock and sleeps on that condition.
+    The person then is woken up so that they can get on the elevator
+    which also changes a global queue. The person then releases the
+    lock and sleeps, waiting for the elevator to get to its departure
+    floor. The elevator then wakes up, reacquires the lock, and
+    begins to move to floor 2. No requests are made for the elevator
+    before it gets to floor 2 so the elevator arrives and sleeps
+    waiting for the person to get off. The person acquires the lock
+    and leaves the elevator, removing themselves from the global
+    queue. We then print ----- thread 13 arrived at floor. The
+    person releases the lock, however, since there are no more
+    requests, the elevator sleeps awaiting another request.
+
+###################################################################
+
+Explanation of Bridge Problem Output
+
+    The bridge solution can be run with the command
+    ./threads/nachos -P 4 -rs 1
+
+    The output is as follows:
+
+
+    Car 6 crossing bridge in 1 direction.
+    Car 5 waiting on bridge in the 0 direction.
+    Car 4 crossing bridge in 1 direction.
+    Car 6 exiting bridge in the 1 direction.
+    Car 5 waiting on bridge in the 0 direction.
+    Car 9 crossing bridge in 1 direction.
+    Car 1 crossing bridge in 1 direction.
+    Car 16 waiting on bridge in the 1 direction.
+    Car 19 waiting on bridge in the 0 direction.
+    Car 10 waiting on bridge in the 0 direction.
+    Car 14 waiting on bridge in the 1 direction.
+    Car 2 waiting on bridge in the 0 direction.
+    Car 7 waiting on bridge in the 0 direction.
+    Car 12 waiting on bridge in the 1 direction.
+    Car 17 waiting on bridge in the 0 direction.
+    Car 8 waiting on bridge in the 1 direction.
+    Car 18 waiting on bridge in the 1 direction.
+    Car 4 exiting bridge in the 1 direction.
+    Car 5 waiting on bridge in the 0 direction.
+    Car 16 crossing bridge in 1 direction.
+
+
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+    Car 19 exiting bridge in the 0 direction.
+    Car 7 crossing bridge in 0 direction.
+    Car 17 waiting on bridge in the 0 direction.
+    Car 13 waiting on bridge in the 0 direction.
+    Car 15 waiting on bridge in the 0 direction.
+    Car 3 waiting on bridge in the 0 direction.
+    Car 10 exiting bridge in the 0 direction.
+    Car 17 crossing bridge in 0 direction.
+    Car 13 waiting on bridge in the 0 direction.
+    Car 15 waiting on bridge in the 0 direction.
+    Car 3 waiting on bridge in the 0 direction.
+    Car 17 exiting bridge in the 0 direction.
+    Car 13 crossing bridge in 0 direction.
+    Car 15 waiting on bridge in the 0 direction.
+    Car 3 waiting on bridge in the 0 direction.
+    Car 13 exiting bridge in the 0 direction.
+    Car 15 crossing bridge in 0 direction.
+
+    The stipulations for the bridge problem are that only traffic
+    can only move in one direction at any given time. The other
+    stipulation is that there can never be more than 3 cars on the
+    bridge at one time. Due to our implementation we allow for
+    starvation of one side of the bridge. The reason starvation
+    exists is because when a vehicle beings driving on the bridge
+    in a certain direction, cars can continue down that direction
+    until 3 vehicles are on the bridge. However, when the first
+    vehicle leaves, we cannot signal the other direction unless
+    all vehicles going in the first direction are off of the bridge.
+    You can see this in our implementation. Car 6 begins going across
+    the bridge and car 5 has to wait since it is requesting to go the
+    other way. Car 9 is arriving at the bridge later than car 5 but
+    car 9 gets to cross the bridge sooner since it is not requesting
+    to go in the opposite direction. As you can see both conditions
+    are met in the solution of this problem. For example, car 16 has
+    to wait to go across the bridge since car 4, 9 and 1 are already
+    on the bridge. Car 16 must wait until one of those cars arrives
+    on the other side. In the second half of our example you can see
+    the results of starvation. Car 7 asks to go across the bridge
+    close to the beginning of the simulation, however, it does not
+    get to cross until much later due to cars showing up and driving
+    across the bridge in the 1 direction.  
+
+    In terms of locks and conditions this is pretty straight forward.
+    Cars arriving at the bridge acquire a lock, check to see if they
+    can begin to drive down the bridge.  If they are allowed to drive
+    down the bridge, they will increment the global value to determine
+    how many cars are on the bridge and then release the lock. If they
+    are not allowed to drive down the bridge, they will wait on a queue
+    until a car exiting the bridge broadcasts and then attempt to
+    reacquire the lock. Then when cars have exited the bridge they
+    acquire the lock, exit the bridge, decrement the global value
+    to determine how many cars are on the bridge, and then
+    broadcast to let other cars attempt to drive across the bridge.
+
+    So, to answer the question in part B if a car arrives at the bridge while traffic is currently moving 
+    in its direction of travel, but there is another car already waiting 
+    in the opposite direction, the new arrival will cross before the car 
+    waiting on the other side.  This is due to the fact that the first car 
+    to get to the bridge will be sleeping until another car exits the bridge
+    and calls a broadcast on the condition variable. So if another car traveling
+	in the current direction arrives before the one currently on the bridge exits
+	it will go ahead without waiting. Even if there are 3 cars currently on the
+	bridge and both cars are waiting. Once a car exits the bridge and broadcasts, the
+	first car will wakeup first, but will go back to sleep since traffic is still not in
+	it's direction, thus the second car that arrived will go first as well.

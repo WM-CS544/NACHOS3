@@ -1,0 +1,4 @@
+#SCRIPT
+
+cat fileio.input
+cat scripttest
