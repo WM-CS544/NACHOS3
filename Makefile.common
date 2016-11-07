@@ -26,7 +26,7 @@
 # of liability and disclaimer of warranty provisions.
 
 CFLAGS = -g -Wall -m32 -Wshadow $(INCPATH) $(DEFINES) $(HOST) -DCHANGED
-LDFLAGS =  -m32
+LDFLAGS = -m32
 
 # These definitions may change as the software is updated.
 # Some of them are also system dependent
@@ -113,26 +113,22 @@ USERPROG_O = addrspace.o bitmap.o exception.o progtest.o console.o machine.o \
 	fdset.o processmanager.o filemanager.o
 
 VM_H = ../filesys/synchdisk.h \
-        ../machine/disk.h
+	../machine/disk.h
 VM_C = ../filesys/synchdisk.cc \
-        ../machine/disk.cc
+	../machine/disk.cc
 VM_O = synchdisk.o disk.o
 
 FILESYS_H =../filesys/directory.h \
 	../filesys/filehdr.h\
 	../filesys/filesys.h \
-	../filesys/openfile.h\
-	../filesys/synchdisk.h\
-	../machine/disk.h
+	../filesys/openfile.h
 FILESYS_C =../filesys/directory.cc\
 	../filesys/filehdr.cc\
 	../filesys/filesys.cc\
 	../filesys/fstest.cc\
-	../filesys/openfile.cc\
-	../filesys/synchdisk.cc\
-	../machine/disk.cc
-FILESYS_O =directory.o filehdr.o filesys.o fstest.o openfile.o synchdisk.o\
-	disk.o
+	../filesys/openfile.cc
+
+FILESYS_O =directory.o filehdr.o filesys.o fstest.o openfile.o
 
 NETWORK_H = ../network/post.h ../machine/network.h
 NETWORK_C = ../network/nettest.cc ../network/post.cc ../machine/network.cc
