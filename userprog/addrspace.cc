@@ -122,7 +122,7 @@ AddrSpace::AddrSpace(OpenFile *executable)
 			pageTable[i].physicalPage = memoryManager->NewPage();
 			ASSERT(pageTable[i].physicalPage != -1);
 #endif
-			pageTable[i].valid = true;
+			pageTable[i].valid = false;
 			pageTable[i].use = false;
 			pageTable[i].dirty = false;
 			pageTable[i].readOnly = false;  // if the code segment was entirely on 
@@ -136,8 +136,10 @@ AddrSpace::AddrSpace(OpenFile *executable)
 #ifndef CHANGED
     bzero(machine->mainMemory, size);
 #else
+		char *buffer = new(std::nothrow) char[PageSize];
 		for (i = 0; i < numPages; i++) {
-			bzero(&(machine->mainMemory[GetPhysPageNum(i)*PageSize]), PageSize);
+			//bzero(&(machine->mainMemory[GetPhysPageNum(i)*PageSize]), PageSize);
+			synchDisk->WriteSector(pageTable[i].physicalPage, buffer);
 		}
 #endif
 
@@ -151,27 +153,28 @@ AddrSpace::AddrSpace(OpenFile *executable)
 #else
 			//TODO: Maybe clean this up a little
 			for (i=(noffH.code.virtualAddr % PageSize); i < (unsigned int)(noffH.code.size + (noffH.code.virtualAddr % PageSize)); i+=(PageSize - (i % PageSize))) {
-				int physAddress = GetPhysAddress((noffH.code.virtualAddr + i) - (noffH.code.virtualAddr % PageSize));
+				int virtAddress = (noffH.code.virtualAddr + i) - (noffH.code.virtualAddr%PageSize);
+				int offset = virtAddress % PageSize;
 				unsigned int writtenSoFar = i - (noffH.code.virtualAddr % PageSize);
 				int location = noffH.code.inFileAddr + writtenSoFar;
 
 				//not at beginning of page
 				if (i % PageSize != 0) { //more data than can fit on page
 					if ((noffH.code.size - writtenSoFar) > (PageSize - (i % PageSize))) {
-						executable->ReadAt(&(machine->mainMemory[physAddress]),
-								(PageSize - (i % PageSize)), location);
+						executable->ReadAt(&(buffer[offset]), (PageSize - (i % PageSize)), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
 					} else {	//all data can fit on current page
-						executable->ReadAt(&(machine->mainMemory[physAddress]),
-								(noffH.code.size - writtenSoFar), location);
+						executable->ReadAt(&(buffer[offset]), (noffH.code.size - writtenSoFar), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
 					}
 
 				} else { //starting at beginning of page
 					if ((noffH.code.size - writtenSoFar) > PageSize) {	//more data than can fit on page
-						executable->ReadAt(&(machine->mainMemory[physAddress]),
-								PageSize, (noffH.code.inFileAddr + writtenSoFar));
+						executable->ReadAt(&(buffer[offset]), PageSize, (noffH.code.inFileAddr + writtenSoFar));
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
 					} else {	//all data can fit on current page
-						executable->ReadAt(&(machine->mainMemory[physAddress]),
-								(noffH.code.size - writtenSoFar), location);
+						executable->ReadAt(&(buffer[offset]), (noffH.code.size - writtenSoFar), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
 					}
 				}
 			}
@@ -186,27 +189,28 @@ AddrSpace::AddrSpace(OpenFile *executable)
 #else
 			//TODO: Maybe clean this up a little
 			for (i=(noffH.initData.virtualAddr % PageSize); i < (unsigned int)(noffH.initData.size + (noffH.initData.virtualAddr % PageSize)); i+=(PageSize - (i % PageSize))) {
-				int physAddress = GetPhysAddress((noffH.initData.virtualAddr + i) - (noffH.initData.virtualAddr % PageSize));
+				int virtAddress = (noffH.initData.virtualAddr + i) - (noffH.initData.virtualAddr%PageSize);
+				int offset = virtAddress % PageSize;
 				unsigned int writtenSoFar = i - (noffH.initData.virtualAddr % PageSize);
 				int location = noffH.initData.inFileAddr + writtenSoFar;
 
 				//not at beginning of page
 				if (i % PageSize != 0) { //more data than can fit on page
 					if ((noffH.initData.size - writtenSoFar) > (PageSize - (i % PageSize))) {
-						executable->ReadAt(&(machine->mainMemory[physAddress]),
-								(PageSize - (i % PageSize)), location);
+						executable->ReadAt(&(buffer[offset]), (PageSize - (i % PageSize)), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
 					} else {	//all data can fit on current page
-						executable->ReadAt(&(machine->mainMemory[physAddress]),
-								(noffH.initData.size - writtenSoFar), location);
+						executable->ReadAt(&(buffer[offset]), (noffH.initData.size - writtenSoFar), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
 					}
 
 				} else { //starting at beginning of page
 					if ((noffH.initData.size - writtenSoFar) > PageSize) {	//more data than can fit on page
-						executable->ReadAt(&(machine->mainMemory[physAddress]),
-								PageSize, location);
+						executable->ReadAt(&(buffer[offset]), PageSize, location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
 					} else {	//all data can fit on current page
-						executable->ReadAt(&(machine->mainMemory[physAddress]),
-								(noffH.initData.size - writtenSoFar), location);
+						executable->ReadAt(&(buffer[offset]), (noffH.initData.size - writtenSoFar), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
 					}
 				}
 			}
@@ -323,7 +327,7 @@ AddrSpace::AddrSpace(AddrSpace *parentSpace, int pid)
   for (unsigned int i = 0; i < numPages; i++) {
 		pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
 		pageTable[i].physicalPage = memoryManager->NewPage();
-		pageTable[i].valid = true;
+		pageTable[i].valid = false;
 		pageTable[i].use = false;
 		pageTable[i].dirty = false;
 		pageTable[i].readOnly = false;  // if the code segment was entirely on 
@@ -383,7 +387,7 @@ AddrSpace::Exec(OpenFile *executable) {
 	for (i = 0; i < numPages; i++) {
 		pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
 		pageTable[i].physicalPage = memoryManager->NewPage();
-		pageTable[i].valid = true;
+		pageTable[i].valid = false;
 		pageTable[i].use = false;
 		pageTable[i].dirty = false;
 		pageTable[i].readOnly = false;  // if the code segment was entirely on 

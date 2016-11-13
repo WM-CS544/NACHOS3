@@ -29,6 +29,8 @@ SynchDisk   *synchDisk;
 
 #ifdef USER_PROGRAM	// requires either FILESYS or FILESYS_STUB
 #ifdef CHANGED
+SynchDisk   *synchDisk;
+
 SynchConsole *synchConsole;
 
 MemoryManager *memoryManager;
@@ -160,18 +162,6 @@ Initialize(int argc, char **argv)
 
 #ifdef USER_PROGRAM
     machine = new(std::nothrow) Machine(debugUserProg);	// this must come first
-
-#ifdef CHANGED
-		synchConsole = new(std::nothrow) SynchConsole(NULL, NULL);
-		
-		memoryManager = new(std::nothrow) MemoryManager(NumPhysPages);
-
-		processManager = new(std::nothrow) ProcessManager();
-
-		fileManager = new(std::nothrow) FileManager();
-
-		timeSlicer = new(std::nothrow) Timer(TimerInterruptHandler, 0, true);
-#endif
 #endif
 
 #ifdef FILESYS
@@ -184,6 +174,20 @@ Initialize(int argc, char **argv)
 
 #ifdef NETWORK
     postOffice = new(std::nothrow) PostOffice(netname, rely, 10);
+#endif
+
+#ifdef CHANGED
+    synchDisk = new(std::nothrow) SynchDisk("DISK");
+
+		synchConsole = new(std::nothrow) SynchConsole(NULL, NULL);
+		
+		memoryManager = new(std::nothrow) MemoryManager(NumPhysPages);
+
+		processManager = new(std::nothrow) ProcessManager();
+
+		fileManager = new(std::nothrow) FileManager();
+
+		timeSlicer = new(std::nothrow) Timer(TimerInterruptHandler, 0, true);
 #endif
 }
 

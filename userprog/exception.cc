@@ -177,6 +177,9 @@ ExceptionHandler(ExceptionType which)
 #ifndef CHANGED
     default: ;
 #else
+    case PageFaultException:
+    	memoryManager->MoveToMem(currentThread->space, machine->ReadRegister(BadVAddrReg)/PageSize);
+    	break;
 		default:
 			//exit with value of -1
 			machine->WriteRegister(4, -1);

@@ -15,7 +15,10 @@
 
 #include "copyright.h"
 #include "filesys.h"
+#ifdef CHANGED
 #include "processcontrolblock.h"
+#include "translate.h"
+#endif
 
 #define UserStackSize		1024 	// increase this as necessary!
 
@@ -37,6 +40,7 @@ class AddrSpace {
 
 		unsigned int GetNumPages() {return numPages;};
 		ProcessControlBlock *GetProcessControlBlock();
+		TranslationEntry *GetPageTable() {return pageTable;};
 
 		int ReadByte(unsigned int va, char *ch);
 		int WriteByte(unsigned int va, char byte);

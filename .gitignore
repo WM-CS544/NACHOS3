@@ -2,6 +2,7 @@
 *.coff
 threads/nachos
 userprog/nachos
+vm/nachos
 test/matmult
 test/halt
 test/shell
@@ -32,3 +33,4 @@ fileio.out
 hello.out
 p2check.tgz
 p2.tgz
+DISK
