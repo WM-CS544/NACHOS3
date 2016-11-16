@@ -948,7 +948,11 @@ memorymanager.o: ../userprog/memorymanager.cc /usr/include/stdc-predef.h \
  ../threads/scheduler.h ../machine/interrupt.h ../threads/list.h \
  ../machine/stats.h ../machine/timer.h ../userprog/synchconsole.h \
  ../machine/console.h ../userprog/memorymanager.h \
- ../userprog/processmanager.h ../userprog/filemanager.h
+ ../userprog/processmanager.h ../userprog/filemanager.h \
+ /usr/include/math.h /usr/include/bits/huge_val.h \
+ /usr/include/bits/huge_valf.h /usr/include/bits/huge_vall.h \
+ /usr/include/bits/inf.h /usr/include/bits/nan.h \
+ /usr/include/bits/mathdef.h /usr/include/bits/mathcalls.h
 processcontrolblock.o: ../userprog/processcontrolblock.cc \
  /usr/include/stdc-predef.h ../userprog/processcontrolblock.h \
  ../threads/copyright.h ../userprog/fdset.h ../filesys/filesys.h \

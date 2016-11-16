@@ -37,6 +37,7 @@ class AddrSpace {
 #ifdef CHANGED
 		AddrSpace(AddrSpace *parentSpace, int pid);
 		void Exec(OpenFile *executable);
+		void ClearPageTable();
 
 		unsigned int GetNumPages() {return numPages;};
 		ProcessControlBlock *GetProcessControlBlock();

@@ -2,6 +2,7 @@
 
 #include "memorymanager.h"
 #include <new>
+#include <math.h>
 
 MemoryManager::MemoryManager(int numPages)
 {
@@ -13,6 +14,7 @@ MemoryManager::MemoryManager(int numPages)
 
 MemoryManager::~MemoryManager()
 {
+	delete diskMap;
 	delete memoryMap;
 	delete lock;
 	delete [] memInfo;
@@ -33,14 +35,18 @@ MemoryManager::NewPage()
 
 //TODO: Change this to clear based on pagetable
 void
-MemoryManager::ClearPage(int page)
+MemoryManager::ClearPage(int page, TranslationEntry *pageTable)
 {
 	lock->Acquire();
 
-	//page should not be empty if clearing it
-	ASSERT(memoryMap->Test(page));
+	//page is in physMem
+	if (pageTable[page].valid) {
+		ReplacePage(pageTable[page].physicalPage);
+	}
 
-	memoryMap->Clear(page);
+	//page should not be empty if clearing it
+	ASSERT(diskMap->Test(pageTable[page].physicalPage));
+	diskMap->Clear(page);
 
 	lock->Release();
 }
@@ -60,12 +66,60 @@ MemoryManager::NumPagesFree()
 int
 MemoryManager::MoveToMem(AddrSpace *curSpace, unsigned int virtpn)
 {
-	char *fromDisk = new(std::nothrow) char[PageSize];
-
 	lock->Acquire();
 
+	int replacedPage = GetPageFromDisk(curSpace, virtpn);
+
+	lock->Release();
+
+	return replacedPage;
+}
+
+int
+MemoryManager::KernelPage(AddrSpace *curSpace, unsigned int virtpn)
+{
+	lock->Acquire();
+	
+	int lockPage;
+	int retval = 0;
+	//page not already in memory
+	if (!curSpace->GetPageTable()[virtpn].valid) {
+			lockPage = GetPageFromDisk(curSpace, virtpn);
+			retval = 1;	//return one if faulted on page
+	} else {
+			lockPage = curSpace->GetPageTable()[virtpn].physicalPage;
+	}
+
+	//lock the page
+	memInfo[lockPage].lockbit = 1;
+
+	lock->Release();
+
+	return retval;
+}
+
+int
+MemoryManager::UnlockPage(AddrSpace *curSpace, unsigned int virtpn)
+{
+	lock->Acquire();
+
+	//should be valid page if we are unlocking
+	ASSERT(curSpace->GetPageTable()[virtpn].valid);
+
+	memInfo[curSpace->GetPageTable()[virtpn].physicalPage].lockbit = 0;
+
+	lock->Release();
+
+	return 1;
+}
+
+int
+MemoryManager::GetPageFromDisk(AddrSpace *curSpace, unsigned int virtpn)
+{
+	char *fromDisk = new(std::nothrow) char[PageSize];
+
 	if (memoryMap->NumClear() <= 0) {
-		ReplacePage();	
+		ReplacePage(FindPageToReplace());	
 	}
 
 	int physPage = memoryMap->Find();
@@ -83,29 +137,29 @@ MemoryManager::MoveToMem(AddrSpace *curSpace, unsigned int virtpn)
 	memInfo[physPage].dsn = disksn;
 	memInfo[physPage].lockbit = 0;
 
-	lock->Release();
-
 	delete fromDisk;
 
-	return 1;
+	return physPage;
 }
 
 int
-MemoryManager::ReplacePage()
+MemoryManager::ReplacePage(int toBeReplaced)
 {
-
-	unsigned int toBeReplaced = FindPageToReplace();
 	memEntry curEntry = memInfo[toBeReplaced];
 	AddrSpace *curSpace = memInfo[toBeReplaced].addrspace;
 	TranslationEntry *curPageTable = curSpace->GetPageTable();
 
-	//if not valid then vpn = dsn
-	curPageTable[memInfo[toBeReplaced].vpn].virtualPage = curEntry.dsn;
-	curPageTable[memInfo[toBeReplaced].vpn].valid = false;
+	//if not valid then ppn = dsn
+	curPageTable[curEntry.vpn].physicalPage = curEntry.dsn;
+	curPageTable[curEntry.vpn].valid = false;
 
-	//TODO:write to disk
+	synchDisk->WriteSector(curEntry.dsn, &(machine->mainMemory[toBeReplaced*PageSize]));
+	char *fromDisk = new(std::nothrow) char[PageSize];
+	synchDisk->ReadSector(curEntry.dsn, fromDisk);
 	
 	//free from memoryMap
+	//page should not be empty if clearing it
+	ASSERT(memoryMap->Test(toBeReplaced));
 	memoryMap->Clear(toBeReplaced);
 
 	return 1;
@@ -114,6 +168,10 @@ MemoryManager::ReplacePage()
 unsigned int
 MemoryManager::FindPageToReplace()
 {
-	return 1;
+	int page = rand()%NumPhysPages;
+	while (memInfo[page].lockbit) {
+		page = rand()%NumPhysPages;
+	}
+	return page;
 }
 #endif

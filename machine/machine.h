@@ -33,7 +33,7 @@
 					// simplicity
 
 #ifdef CHANGED
-#define NumPhysPages    32
+#define NumPhysPages    8
 #else
 #define NumPhysPages    32
 #endif

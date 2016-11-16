@@ -117,48 +117,48 @@ ExceptionHandler(ExceptionType which)
 		case SyscallException:
 			switch (type) {
 				case SC_Halt:
-					DEBUG('a', "Shutdown, initiated by user program.\n");
+					DEBUG('e', "Shutdown, initiated by user program.\n");
 					interrupt->Halt();
 #ifdef CHANGED
 					break;
 				case SC_Create:
-					DEBUG('a', "Create file, initiated by user program.\n");
+					DEBUG('e', "Create file, initiated by user program.\n");
 					SysCreate();
 					break;
 				case SC_Open:
-					DEBUG('a', "Open file, initiated by user program.\n");
+					DEBUG('e', "Open file, initiated by user program.\n");
 					SysOpen();
 					break;
 				case SC_Read:
-					DEBUG('a', "Read, initiated by user program.\n");
+					DEBUG('e', "Read, initiated by user program.\n");
 					SysRead();
 					break;
 				case SC_Write:
-					DEBUG('a', "Write, initiated by user program.\n");
+					DEBUG('e', "Write, initiated by user program.\n");
 					SysWrite();
 					break;
 				case SC_Close:
-					DEBUG('a', "Close, initiated by user program.\n");
+					DEBUG('e', "Close, initiated by user program.\n");
 					SysClose();
 					break;
 				case SC_Fork:
-					DEBUG('a', "Fork, initiated by user program.\n");
+					DEBUG('e', "Fork, initiated by user program.\n");
 					SysFork();
 					break;
 				case SC_Exec:
-					DEBUG('a', "Exec, initiated by user program.\n");
+					DEBUG('e', "Exec, initiated by user program.\n");
 					SysExec();
 					break;
 				case SC_Join:
-					DEBUG('a', "Join, initiated by user program.\n");
+					DEBUG('e', "Join, initiated by user program.\n");
 					SysJoin();
 					break;
 				case SC_Exit:
-					DEBUG('a', "Exit, initiated by user program.\n");
+					DEBUG('e', "Exit, initiated by user program.\n");
 					SysExit();
 					break;
 				case SC_Dup:
-					DEBUG('a', "Dup, initiated by user program.\n");
+					DEBUG('e', "Dup, initiated by user program.\n");
 					SysDup();
 					break;
 #endif
@@ -179,6 +179,7 @@ ExceptionHandler(ExceptionType which)
 #else
     case PageFaultException:
     	memoryManager->MoveToMem(currentThread->space, machine->ReadRegister(BadVAddrReg)/PageSize);
+			stats->numPageFaults++;
     	break;
 		default:
 			//exit with value of -1
@@ -190,12 +191,30 @@ ExceptionHandler(ExceptionType which)
 
 #ifdef  CHANGED
 int
+lockPage(int va)
+{
+	int vp = va/PageSize;
+	//returns 1 if faulted on page
+	if (memoryManager->KernelPage(currentThread->space, vp)) {
+		stats->numPageFaults++;
+	}
+	return vp;
+}
+
+int
 getStringFromUser(int va, char *string, int length)
 {
 	int valid = 0;
+	int page = lockPage(va);
+	int prevPage = page;
 	// iterate through length of the string until a null byte is reached, then break
 	for (int i=0; i<length; i++) {
 		valid = currentThread->space->ReadByte(va++, &string[i]);	//translation done in addrspace
+		page = lockPage(va);
+		if (page != prevPage) {
+			memoryManager->UnlockPage(currentThread->space, prevPage);
+		}
+		prevPage = page;
 		if (!valid) {
 			return 0;
 		}
@@ -206,6 +225,8 @@ getStringFromUser(int va, char *string, int length)
 	// Place a null byte at end of char * to terminate string
 	string[length-1] = '\0';
 
+	//unlock last page used
+	memoryManager->UnlockPage(currentThread->space, page);
 	return 1;
 }
 
@@ -213,12 +234,21 @@ int
 getDataFromUser(int va, char *buffer, int length)
 {
 	int valid = 0;
+	int page = lockPage(va);
+	int prevPage = page;
 	for (int i=0; i<length; i++) {
 		valid = currentThread->space->ReadByte(va++, &buffer[i]); //translation done in addrspace
+		page = lockPage(va);
+		if (page != prevPage) {
+			memoryManager->UnlockPage(currentThread->space, prevPage);
+		}
+		prevPage = page;
 		if (!valid) {
 			return 0;
 		}
 	}	
+	//unlock last page used
+	memoryManager->UnlockPage(currentThread->space, page);
 	return 1;
 }
 
@@ -226,19 +256,31 @@ int
 writeDataToUser(int va, char *buffer, int length)
 {
 	int valid = 0;
+	int page = lockPage(va);
+	int prevPage = page;
 	for (int i=0; i < length; i++) {
 		valid = currentThread->space->WriteByte(va++, buffer[i]);
+		page = lockPage(va);
+		if (page != prevPage) {
+			memoryManager->UnlockPage(currentThread->space, prevPage);
+		}
+		prevPage = page;
 		if (!valid) {
 			return 0;
 		}
 	}
+	//unlock last page used
+	memoryManager->UnlockPage(currentThread->space, page);
 	return 1;
 }
 
 int
 writeCharToUser(int va, char ch) {
 	int valid = 0;
+	int page = lockPage(va);
 	valid = currentThread->space->WriteByte(va, ch);
+	//unlock last page used
+	memoryManager->UnlockPage(currentThread->space, page);
 	if (!valid) {
 		return 0;
 	} else {
@@ -251,13 +293,22 @@ getPointerFromUser(int va) {
 	//assumes 4 byte pointer little endian
 	char newVA[4];
 	int valid = 0;
+	int page = lockPage(va);
+	int prevPage = page;
 	for (int i=0; i < 4; i++) {
 		valid = currentThread->space->ReadByte(va++, &newVA[i]); //translation done in addrspace
+		page = lockPage(va);
+		if (page != prevPage) {
+			memoryManager->UnlockPage(currentThread->space, prevPage);
+		}
+		prevPage = page;
 		if (!valid) {
 			return -1;
 		}
 	}
 	unsigned int result = ((newVA[3] & 255) << 24) | ((newVA[2] & 255) << 16) | ((newVA[1] & 255) << 8) | (newVA[0] & 255);
+	//unlock last page used
+	memoryManager->UnlockPage(currentThread->space, page);
 	return result;
 }
 
@@ -553,6 +604,7 @@ SysExit()
 	}
 
 	//TODO:clean up everything
+	currentThread->space->ClearPageTable();
 
 	currentThread->Finish();
 }

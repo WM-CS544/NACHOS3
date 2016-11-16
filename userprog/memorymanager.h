@@ -24,13 +24,16 @@ class  MemoryManager {
 		~MemoryManager();
 
 		int NewPage();
-		void ClearPage(int page);
+		void ClearPage(int page, TranslationEntry *pageTable);
 		int NumPagesFree();
 		int MoveToMem(AddrSpace *curSpace, unsigned int virtpn);
+		int KernelPage(AddrSpace *curSpace, unsigned int virtpn);
+		int UnlockPage(AddrSpace *curSpace, unsigned int virtpn);
 
 	private:
 
-		int ReplacePage();
+		int GetPageFromDisk(AddrSpace *curSpace, unsigned int virtpn);
+		int ReplacePage(int toBeReplaced);
 		unsigned int FindPageToReplace();
 		BitMap *memoryMap;
 		BitMap *diskMap;
