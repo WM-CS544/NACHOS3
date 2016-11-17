@@ -36,7 +36,7 @@ CFLAGS = -G 0 -c $(INCDIR) -DCHANGED -nostartfiles
 
 all: halt shell matmult sort fileio fromcons hellocons hellofile newfork parent_child kid \
 	seq_child deepfork deepkid1 deepkid2 share sharekid maxfork arg_seq_child argtest argkid \
-	cat cp filesynch filesynchkid
+	cat cp filesynch filesynchkid vmtorture qsort qmatmult Xkid
 
 start.o: start.s ../userprog/syscall.h
 	$(CPP) $(CPPFLAGS) start.s > strt.s
@@ -192,4 +192,28 @@ filesynchkid.o: filesynchkid.c
 filesynchkid: filesynchkid.o start.o
 	$(LD) $(LDFLAGS) start.o filesynchkid.o -o filesynchkid.coff
 	../bin/coff2noff filesynchkid.coff filesynchkid
+
+vmtorture.o: vmtorture.c
+	$(CC) $(CFLAGS) -c vmtorture.c
+vmtorture: vmtorture.o start.o
+	$(LD) $(LDFLAGS) start.o vmtorture.o -o vmtorture.coff
+	../bin/coff2noff vmtorture.coff vmtorture 
+
+qsort.o: qsort.c
+	$(CC) $(CFLAGS) -c qsort.c
+qsort: qsort.o start.o
+	$(LD) $(LDFLAGS) start.o qsort.o -o qsort.coff
+	../bin/coff2noff qsort.coff qsort 
+
+qmatmult.o: qmatmult.c
+	$(CC) $(CFLAGS) -c qmatmult.c
+qmatmult: qmatmult.o start.o
+	$(LD) $(LDFLAGS) start.o qmatmult.o -o qmatmult.coff
+	../bin/coff2noff qmatmult.coff qmatmult 
+
+Xkid.o: Xkid.c
+	$(CC) $(CFLAGS) -c Xkid.c
+Xkid: Xkid.o start.o
+	$(LD) $(LDFLAGS) start.o Xkid.o -o Xkid.coff
+	../bin/coff2noff Xkid.coff Xkid 
 

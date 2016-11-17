@@ -28,6 +28,10 @@ test/cat
 test/cp
 test/filesynch
 test/filesynchkid
+test/qsort
+test/qmatmult
+test/vmtorture
+test/Xkid
 filesynch.output
 fileio.out
 hello.out
