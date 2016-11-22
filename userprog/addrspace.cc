@@ -81,7 +81,7 @@ AddrSpace::AddrSpace(OpenFile *executable)
 	executable->ReadAt(script, 7, 0);
 	executable->ReadAt(check, 6, 0);
 	script[7] = '\0';
-	script[6] = '\0';
+	check[6] = '\0';
 
 	if (strcmp(check, "#CHECK") == 0) {
 		char *buffer = new(std::nothrow) char[PageSize];
@@ -125,6 +125,7 @@ AddrSpace::AddrSpace(OpenFile *executable)
 		}
 
 	} else {
+		fprintf(stderr, "%s\n", script);
 		if (strcmp(script, "#SCRIPT") == 0) {
 			tmp = executable;
 			executable = fileSystem->Open((char *)shell);

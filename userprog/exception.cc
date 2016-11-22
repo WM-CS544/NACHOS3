@@ -699,8 +699,9 @@ SysExec()
 
 		//can open file
 		if ((executable = fileSystem->Open(fileName)) != NULL) {
-			char *check = new(std::nothrow) char[6];
+			char *check = new(std::nothrow) char[7];
 			executable->ReadAt(check, 6, 0);
+			check[6] = '\0';
 			currentThread->space->Exec(executable);
 			if (strcmp(check, "#CHECK") != 0) {
 				currentThread->space->InitRegisters();

@@ -34,8 +34,9 @@ StartProcess(char *filename)
     space = new(std::nothrow) AddrSpace(executable);    
     currentThread->space = space;
 
-		char *check = new(std::nothrow) char[6];
+		char *check = new(std::nothrow) char[7];
 		executable->ReadAt(check, 6, 0);
+		check[6] = '\0';
 
     delete executable;			// close file
 
