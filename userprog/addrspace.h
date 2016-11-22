@@ -38,6 +38,7 @@ class AddrSpace {
 		AddrSpace(AddrSpace *parentSpace, int pid);
 		void Exec(OpenFile *executable);
 		void ClearPageTable();
+		void Checkpoint(OpenFile *file);
 
 		unsigned int GetNumPages() {return numPages;};
 		ProcessControlBlock *GetProcessControlBlock();

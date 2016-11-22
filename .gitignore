@@ -32,6 +32,8 @@ test/qsort
 test/qmatmult
 test/vmtorture
 test/Xkid
+test/ckmatmult
+test/ck1
 filesynch.output
 fileio.out
 hello.out

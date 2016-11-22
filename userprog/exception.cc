@@ -90,6 +90,7 @@ HandleTLBFault(int vaddr)
 //	are in machine.h.
 //----------------------------------------------------------------------
 #ifdef CHANGED
+int lockPage(int va);
 int getStringFromUser(int va, char *string, int length);
 int getDataFromUser(int va, char *buffer, int length);
 int writeDataToUser(int va, char *buffer, int length);
@@ -106,6 +107,7 @@ void SysJoin();
 void SysExit();
 void SysExec();
 void SysDup();
+void SysCheck();
 #endif
 
 void
@@ -160,6 +162,10 @@ ExceptionHandler(ExceptionType which)
 				case SC_Dup:
 					DEBUG('e', "Dup, initiated by user program.\n");
 					SysDup();
+					break;
+				case SC_Check:
+					DEBUG('e', "Checkpoint, initiated by user program.\n");
+					SysCheck();
 					break;
 #endif
 				default:
@@ -693,9 +699,13 @@ SysExec()
 
 		//can open file
 		if ((executable = fileSystem->Open(fileName)) != NULL) {
+			char *check = new(std::nothrow) char[6];
+			executable->ReadAt(check, 6, 0);
 			currentThread->space->Exec(executable);
-			currentThread->space->InitRegisters();
-			currentThread->space->RestoreState();
+			if (strcmp(check, "#CHECK") != 0) {
+				currentThread->space->InitRegisters();
+			}
+				currentThread->space->RestoreState();
 
 			//hide args "above" stack
 			int sp = machine->ReadRegister(StackReg);
@@ -767,6 +777,44 @@ SysDup()
 
 	machine->WriteRegister(2, retval);
 	increasePC();
+}
+
+//int Checkpoint(char *name)
+void
+SysCheck()
+{
+	OpenFile *file;
+	char *name = new(std::nothrow) char[42];
+	int va = machine->ReadRegister(4); //va of name
+	int retval = -1;
+
+	increasePC();
+
+	if (va != 0) {
+		int valid = getStringFromUser(va, name, 42);
+
+		//exit if trying to read from invalid va
+		if (!valid) {
+			//exit with value of -1
+			machine->WriteRegister(4, -1);
+			SysExit();
+			delete name;
+			return;
+		}
+
+		if (fileSystem->Create(name, 0)) {	//successful create
+			DEBUG('a', "File could not be created");
+			if ((file = fileSystem->Open(name)) != NULL) {	//successful open
+				DEBUG('a', "File opened");
+				machine->WriteRegister(2, 1);
+				currentThread->space->Checkpoint(file);
+				retval = 0;
+			}
+		}
+	}
+
+	machine->WriteRegister(2, retval);
+	delete name;
 }
 #endif
 

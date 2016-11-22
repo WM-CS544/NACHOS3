@@ -74,149 +74,197 @@ AddrSpace::AddrSpace(OpenFile *executable)
     ASSERT(noffH.noffMagic == NOFFMAGIC);
 #else
 	//check if script or executable or neither
-	char *script = new(std::nothrow) char[7];
+	char *script = new(std::nothrow) char[8];
+	char *check = new(std::nothrow) char[7];
 	char const *shell= "shell";
 	OpenFile *tmp;
 	executable->ReadAt(script, 7, 0);
-	if (strcmp(script, "#SCRIPT") == 0) {
-		tmp = executable;
-		executable = fileSystem->Open((char *)shell);
-    executable->ReadAt((char *)&noffH, sizeof(noffH), 0);
-    if ((noffH.noffMagic != NOFFMAGIC) && 
-		(WordToHost(noffH.noffMagic) == NOFFMAGIC))
-    	SwapHeader(&noffH);
-		//can't open shell
-		ASSERT(executable != NULL);
-	} else if (noffH.noffMagic != NOFFMAGIC) {
-		//not script or noff executable
-		ASSERT(0);
-	}
-#endif
+	executable->ReadAt(check, 6, 0);
+	script[7] = '\0';
+	script[6] = '\0';
 
-// how big is address space?
-    size = noffH.code.size + noffH.initData.size + noffH.uninitData.size 
-			+ UserStackSize;	// we need to increase the size
-						// to leave room for the stack
-    numPages = divRoundUp(size, PageSize);
-    size = numPages * PageSize;
-
-#ifndef CHANGED
-    ASSERT(numPages <= NumPhysPages);		// check we're not trying
-						// to run anything too big --
-						// at least until we have
-						// virtual memory
-#else
+	if (strcmp(check, "#CHECK") == 0) {
+		char *buffer = new(std::nothrow) char[PageSize];
+		int offset = 6;
+		//write regs
+		for (i=0; i<NumTotalRegs; i++) {
+			executable->ReadAt(buffer, 20, offset);
+			offset+=20;
+			machine->WriteRegister(i, atoi(buffer));
+		}
+		executable->ReadAt(buffer, 20, offset);
+		offset+=20;
+		numPages = atoi(buffer);
+		//
+		//Make sure not more than we have room for
 		ASSERT(numPages <= (unsigned int) memoryManager->NumPagesFree());
-#endif
 
-    DEBUG('a', "Initializing address space, num pages %d, size %d\n", 
-					numPages, size);
 #ifndef USE_TLB
-// first, set up the translation 
-    pageTable = new(std::nothrow) TranslationEntry[numPages];
-    for (i = 0; i < numPages; i++) {
+	// first, set up the translation 
+		pageTable = new(std::nothrow) TranslationEntry[numPages];
+		for (i = 0; i < numPages; i++) {
 			pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
-#ifndef CHANGED
-			pageTable[i].physicalPage = i;
-#else
 			pageTable[i].physicalPage = memoryManager->NewPage();
-			ASSERT(pageTable[i].physicalPage != -1);
-#endif
 			pageTable[i].valid = false;
 			pageTable[i].use = false;
 			pageTable[i].dirty = false;
 			pageTable[i].readOnly = false;  // if the code segment was entirely on 
 							// a separate page, we could set its 
 							// pages to be read-only
-    }
+			ASSERT(pageTable[i].physicalPage != -1);
+		}
 #endif    
-
-// zero out the entire address space, to zero the unitialized data segment 
-// and the stack segment
-#ifndef CHANGED
-    bzero(machine->mainMemory, size);
-#else
-		char *buffer = new(std::nothrow) char[PageSize];
 		for (i = 0; i < numPages; i++) {
 			synchDisk->WriteSector(pageTable[i].physicalPage, buffer);
 		}
+		//write pages
+		for (i=0; i<numPages; i++) {
+			executable->ReadAt(buffer, PageSize, offset);
+			offset+=PageSize;
+			synchDisk->WriteSector(pageTable[i].physicalPage, buffer);
+		}
+
+	} else {
+		if (strcmp(script, "#SCRIPT") == 0) {
+			tmp = executable;
+			executable = fileSystem->Open((char *)shell);
+			executable->ReadAt((char *)&noffH, sizeof(noffH), 0);
+			if ((noffH.noffMagic != NOFFMAGIC) && 
+			(WordToHost(noffH.noffMagic) == NOFFMAGIC))
+				SwapHeader(&noffH);
+			//can't open shell
+			ASSERT(executable != NULL);
+		} else if (noffH.noffMagic != NOFFMAGIC) {
+			//not script or noff executable
+			ASSERT(0);
+		}
 #endif
 
-// then, copy in the code and data segments into memory
-    if (noffH.code.size > 0) {
-        DEBUG('a', "Initializing code segment, at 0x%x, size %d\n", 
-			noffH.code.virtualAddr, noffH.code.size);
+	// how big is address space?
+			size = noffH.code.size + noffH.initData.size + noffH.uninitData.size 
+				+ UserStackSize;	// we need to increase the size
+							// to leave room for the stack
+			numPages = divRoundUp(size, PageSize);
+			size = numPages * PageSize;
+
 #ifndef CHANGED
-        executable->ReadAt(&(machine->mainMemory[noffH.code.virtualAddr]),
-			noffH.code.size, noffH.code.inFileAddr);
+			ASSERT(numPages <= NumPhysPages);		// check we're not trying
+							// to run anything too big --
+							// at least until we have
+							// virtual memory
 #else
-			//TODO: Maybe clean this up a little
-			for (i=(noffH.code.virtualAddr % PageSize); i < (unsigned int)(noffH.code.size + (noffH.code.virtualAddr % PageSize)); i+=(PageSize - (i % PageSize))) {
-				int virtAddress = (noffH.code.virtualAddr + i) - (noffH.code.virtualAddr%PageSize);
-				int offset = virtAddress % PageSize;
-				unsigned int writtenSoFar = i - (noffH.code.virtualAddr % PageSize);
-				int location = noffH.code.inFileAddr + writtenSoFar;
+			ASSERT(numPages <= (unsigned int) memoryManager->NumPagesFree());
+#endif
 
-				//not at beginning of page
-				if (i % PageSize != 0) { //more data than can fit on page
-					if ((noffH.code.size - writtenSoFar) > (PageSize - (i % PageSize))) {
-						executable->ReadAt(&(buffer[offset]), (PageSize - (i % PageSize)), location);
-						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-					} else {	//all data can fit on current page
-						executable->ReadAt(&(buffer[offset]), (noffH.code.size - writtenSoFar), location);
-						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-					}
+			DEBUG('a', "Initializing address space, num pages %d, size %d\n", 
+						numPages, size);
+#ifndef USE_TLB
+	// first, set up the translation 
+			pageTable = new(std::nothrow) TranslationEntry[numPages];
+			for (i = 0; i < numPages; i++) {
+				pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
+#ifndef CHANGED
+				pageTable[i].physicalPage = i;
+#else
+				pageTable[i].physicalPage = memoryManager->NewPage();
+				ASSERT(pageTable[i].physicalPage != -1);
+#endif
+				pageTable[i].valid = false;
+				pageTable[i].use = false;
+				pageTable[i].dirty = false;
+				pageTable[i].readOnly = false;  // if the code segment was entirely on 
+								// a separate page, we could set its 
+								// pages to be read-only
+			}
+#endif    
 
-				} else { //starting at beginning of page
-					if ((noffH.code.size - writtenSoFar) > PageSize) {	//more data than can fit on page
-						executable->ReadAt(&(buffer[offset]), PageSize, (noffH.code.inFileAddr + writtenSoFar));
-						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-					} else {	//all data can fit on current page
-						executable->ReadAt(&(buffer[offset]), (noffH.code.size - writtenSoFar), location);
-						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-					}
-				}
+	// zero out the entire address space, to zero the unitialized data segment 
+	// and the stack segment
+#ifndef CHANGED
+			bzero(machine->mainMemory, size);
+#else
+			char *buffer = new(std::nothrow) char[PageSize];
+			for (i = 0; i < numPages; i++) {
+				synchDisk->WriteSector(pageTable[i].physicalPage, buffer);
 			}
 #endif
-    }
-    if (noffH.initData.size > 0) {
-        DEBUG('a', "Initializing data segment, at 0x%x, size %d\n", 
-			noffH.initData.virtualAddr, noffH.initData.size);
+
+	// then, copy in the code and data segments into memory
+			if (noffH.code.size > 0) {
+					DEBUG('a', "Initializing code segment, at 0x%x, size %d\n", 
+				noffH.code.virtualAddr, noffH.code.size);
 #ifndef CHANGED
-        executable->ReadAt(&(machine->mainMemory[noffH.initData.virtualAddr]),
-			noffH.initData.size, noffH.initData.inFileAddr);
+					executable->ReadAt(&(machine->mainMemory[noffH.code.virtualAddr]),
+				noffH.code.size, noffH.code.inFileAddr);
 #else
-			//TODO: Maybe clean this up a little
-			for (i=(noffH.initData.virtualAddr % PageSize); i < (unsigned int)(noffH.initData.size + (noffH.initData.virtualAddr % PageSize)); i+=(PageSize - (i % PageSize))) {
-				int virtAddress = (noffH.initData.virtualAddr + i) - (noffH.initData.virtualAddr%PageSize);
-				int offset = virtAddress % PageSize;
-				unsigned int writtenSoFar = i - (noffH.initData.virtualAddr % PageSize);
-				int location = noffH.initData.inFileAddr + writtenSoFar;
+				//TODO: Maybe clean this up a little
+				for (i=(noffH.code.virtualAddr % PageSize); i < (unsigned int)(noffH.code.size + (noffH.code.virtualAddr % PageSize)); i+=(PageSize - (i % PageSize))) {
+					int virtAddress = (noffH.code.virtualAddr + i) - (noffH.code.virtualAddr%PageSize);
+					int offset = virtAddress % PageSize;
+					unsigned int writtenSoFar = i - (noffH.code.virtualAddr % PageSize);
+					int location = noffH.code.inFileAddr + writtenSoFar;
 
-				//not at beginning of page
-				if (i % PageSize != 0) { //more data than can fit on page
-					if ((noffH.initData.size - writtenSoFar) > (PageSize - (i % PageSize))) {
-						executable->ReadAt(&(buffer[offset]), (PageSize - (i % PageSize)), location);
-						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-					} else {	//all data can fit on current page
-						executable->ReadAt(&(buffer[offset]), (noffH.initData.size - writtenSoFar), location);
-						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-					}
+					//not at beginning of page
+					if (i % PageSize != 0) { //more data than can fit on page
+						if ((noffH.code.size - writtenSoFar) > (PageSize - (i % PageSize))) {
+							executable->ReadAt(&(buffer[offset]), (PageSize - (i % PageSize)), location);
+							synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+						} else {	//all data can fit on current page
+							executable->ReadAt(&(buffer[offset]), (noffH.code.size - writtenSoFar), location);
+							synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+						}
 
-				} else { //starting at beginning of page
-					if ((noffH.initData.size - writtenSoFar) > PageSize) {	//more data than can fit on page
-						executable->ReadAt(&(buffer[offset]), PageSize, location);
-						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-					} else {	//all data can fit on current page
-						executable->ReadAt(&(buffer[offset]), (noffH.initData.size - writtenSoFar), location);
-						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+					} else { //starting at beginning of page
+						if ((noffH.code.size - writtenSoFar) > PageSize) {	//more data than can fit on page
+							executable->ReadAt(&(buffer[offset]), PageSize, (noffH.code.inFileAddr + writtenSoFar));
+							synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+						} else {	//all data can fit on current page
+							executable->ReadAt(&(buffer[offset]), (noffH.code.size - writtenSoFar), location);
+							synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+						}
 					}
 				}
-			}
 #endif
-    }
+			}
+			if (noffH.initData.size > 0) {
+					DEBUG('a', "Initializing data segment, at 0x%x, size %d\n", 
+				noffH.initData.virtualAddr, noffH.initData.size);
+#ifndef CHANGED
+					executable->ReadAt(&(machine->mainMemory[noffH.initData.virtualAddr]),
+				noffH.initData.size, noffH.initData.inFileAddr);
+#else
+				//TODO: Maybe clean this up a little
+				for (i=(noffH.initData.virtualAddr % PageSize); i < (unsigned int)(noffH.initData.size + (noffH.initData.virtualAddr % PageSize)); i+=(PageSize - (i % PageSize))) {
+					int virtAddress = (noffH.initData.virtualAddr + i) - (noffH.initData.virtualAddr%PageSize);
+					int offset = virtAddress % PageSize;
+					unsigned int writtenSoFar = i - (noffH.initData.virtualAddr % PageSize);
+					int location = noffH.initData.inFileAddr + writtenSoFar;
+
+					//not at beginning of page
+					if (i % PageSize != 0) { //more data than can fit on page
+						if ((noffH.initData.size - writtenSoFar) > (PageSize - (i % PageSize))) {
+							executable->ReadAt(&(buffer[offset]), (PageSize - (i % PageSize)), location);
+							synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+						} else {	//all data can fit on current page
+							executable->ReadAt(&(buffer[offset]), (noffH.initData.size - writtenSoFar), location);
+							synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+						}
+
+					} else { //starting at beginning of page
+						if ((noffH.initData.size - writtenSoFar) > PageSize) {	//more data than can fit on page
+							executable->ReadAt(&(buffer[offset]), PageSize, location);
+							synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+						} else {	//all data can fit on current page
+							executable->ReadAt(&(buffer[offset]), (noffH.initData.size - writtenSoFar), location);
+							synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+						}
+					}
+				}
+#endif
+			}
 
 #ifdef CHANGED
+	}
 	processControlBlock = new(std::nothrow) ProcessControlBlock(NULL, NULL, 1);
 	if (strcmp(script, "#SCRIPT") == 0) {
 		processControlBlock->GetFDSet()->DeleteFD(0);
@@ -306,6 +354,7 @@ void AddrSpace::RestoreState()
 }
 
 #ifdef CHANGED
+//used for fork
 AddrSpace::AddrSpace(AddrSpace *parentSpace, int pid)
 {
 	numPages = parentSpace->GetNumPages();
@@ -360,114 +409,185 @@ AddrSpace::Exec(OpenFile *executable) {
 #ifndef USE_TLB
 	unsigned int i;
 #endif
-
 	executable->ReadAt((char *)&noffH, sizeof(noffH), 0);
 	if ((noffH.noffMagic != NOFFMAGIC) && 
 	(WordToHost(noffH.noffMagic) == NOFFMAGIC))
 		SwapHeader(&noffH);
-	ASSERT(noffH.noffMagic == NOFFMAGIC);
 
-// how big is address space?
-	size = noffH.code.size + noffH.initData.size + noffH.uninitData.size 
-		+ UserStackSize;	// we need to increase the size
-					// to leave room for the stack
-	numPages = divRoundUp(size, PageSize);
-	size = numPages * PageSize;
+	//check if script or executable or neither
+	char *script = new(std::nothrow) char[8];
+	char *check = new(std::nothrow) char[7];
+	char const *shell= "shell";
+	OpenFile *tmp;
+	executable->ReadAt(script, 7, 0);
+	executable->ReadAt(check, 6, 0);
+	script[7] = '\0';
+	check[6] = '\0';
 
-	//Make sure not more than we have room for
-	ASSERT(numPages <= (unsigned int) memoryManager->NumPagesFree());
+	if (strcmp(check, "#CHECK") == 0) {
+		char *buffer = new(std::nothrow) char[PageSize];
+		int offset = 6;
+		//write regs
+		for (i=0; i<NumTotalRegs; i++) {
+			executable->ReadAt(buffer, 20, offset);
+			offset+=20;
+			machine->WriteRegister(i, atoi(buffer));
+		}
+		executable->ReadAt(buffer, 20, offset);
+		offset+=20;
+		numPages = atoi(buffer);
+		//
+		//Make sure not more than we have room for
+		ASSERT(numPages <= (unsigned int) memoryManager->NumPagesFree());
 
-	DEBUG('a', "Initializing address space, num pages %d, size %d\n", 
-				numPages, size);
 #ifndef USE_TLB
-// first, set up the translation 
-	pageTable = new(std::nothrow) TranslationEntry[numPages];
-	for (i = 0; i < numPages; i++) {
-		pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
-		pageTable[i].physicalPage = memoryManager->NewPage();
-		pageTable[i].valid = false;
-		pageTable[i].use = false;
-		pageTable[i].dirty = false;
-		pageTable[i].readOnly = false;  // if the code segment was entirely on 
-						// a separate page, we could set its 
-						// pages to be read-only
-		ASSERT(pageTable[i].physicalPage != -1);
-	}
+	// first, set up the translation 
+		pageTable = new(std::nothrow) TranslationEntry[numPages];
+		for (i = 0; i < numPages; i++) {
+			pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
+			pageTable[i].physicalPage = memoryManager->NewPage();
+			pageTable[i].valid = false;
+			pageTable[i].use = false;
+			pageTable[i].dirty = false;
+			pageTable[i].readOnly = false;  // if the code segment was entirely on 
+							// a separate page, we could set its 
+							// pages to be read-only
+			ASSERT(pageTable[i].physicalPage != -1);
+		}
+#endif    
+		for (i = 0; i < numPages; i++) {
+			synchDisk->WriteSector(pageTable[i].physicalPage, buffer);
+		}
+		//write pages
+		for (i=0; i<numPages; i++) {
+			executable->ReadAt(buffer, PageSize, offset);
+			offset+=PageSize;
+			synchDisk->WriteSector(pageTable[i].physicalPage, buffer);
+		}
+
+	} else {
+		if (strcmp(script, "#SCRIPT") == 0) {
+			tmp = executable;
+			executable = fileSystem->Open((char *)shell);
+			executable->ReadAt((char *)&noffH, sizeof(noffH), 0);
+			if ((noffH.noffMagic != NOFFMAGIC) && 
+			(WordToHost(noffH.noffMagic) == NOFFMAGIC))
+				SwapHeader(&noffH);
+			//can't open shell
+			ASSERT(executable != NULL);
+		} else if (noffH.noffMagic != NOFFMAGIC) {
+			//not script or noff executable
+			ASSERT(0);
+		}
+
+	// how big is address space?
+		size = noffH.code.size + noffH.initData.size + noffH.uninitData.size 
+			+ UserStackSize;	// we need to increase the size
+						// to leave room for the stack
+		numPages = divRoundUp(size, PageSize);
+		size = numPages * PageSize;
+
+		//Make sure not more than we have room for
+		ASSERT(numPages <= (unsigned int) memoryManager->NumPagesFree());
+
+		DEBUG('a', "Initializing address space, num pages %d, size %d\n", 
+					numPages, size);
+#ifndef USE_TLB
+	// first, set up the translation 
+		pageTable = new(std::nothrow) TranslationEntry[numPages];
+		for (i = 0; i < numPages; i++) {
+			pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
+			pageTable[i].physicalPage = memoryManager->NewPage();
+			pageTable[i].valid = false;
+			pageTable[i].use = false;
+			pageTable[i].dirty = false;
+			pageTable[i].readOnly = false;  // if the code segment was entirely on 
+							// a separate page, we could set its 
+							// pages to be read-only
+			ASSERT(pageTable[i].physicalPage != -1);
+		}
 #endif    
 
-// zero out the entire address space, to zero the unitialized data segment 
-// and the stack segment
-	char *buffer = new(std::nothrow) char[PageSize];
-	for (i = 0; i < numPages; i++) {
-		synchDisk->WriteSector(pageTable[i].physicalPage, buffer);
-	}
+	// zero out the entire address space, to zero the unitialized data segment 
+	// and the stack segment
+		char *buffer = new(std::nothrow) char[PageSize];
+		for (i = 0; i < numPages; i++) {
+			synchDisk->WriteSector(pageTable[i].physicalPage, buffer);
+		}
 
-// then, copy in the code and data segments into memory
-	if (noffH.code.size > 0) {
-			DEBUG('a', "Initializing code segment, at 0x%x, size %d\n", 
-		noffH.code.virtualAddr, noffH.code.size);
+	// then, copy in the code and data segments into memory
+		if (noffH.code.size > 0) {
+				DEBUG('a', "Initializing code segment, at 0x%x, size %d\n", 
+			noffH.code.virtualAddr, noffH.code.size);
 
-		//TODO: Maybe clean this up a little
-		for (i=(noffH.code.virtualAddr % PageSize); i < (unsigned int)(noffH.code.size + (noffH.code.virtualAddr % PageSize)); i+=(PageSize - (i % PageSize))) {
-			int virtAddress = (noffH.code.virtualAddr + i) - (noffH.code.virtualAddr%PageSize);
-			int offset = virtAddress % PageSize;
-			unsigned int writtenSoFar = i - (noffH.code.virtualAddr % PageSize);
-			int location = noffH.code.inFileAddr + writtenSoFar;
+			//TODO: Maybe clean this up a little
+			for (i=(noffH.code.virtualAddr % PageSize); i < (unsigned int)(noffH.code.size + (noffH.code.virtualAddr % PageSize)); i+=(PageSize - (i % PageSize))) {
+				int virtAddress = (noffH.code.virtualAddr + i) - (noffH.code.virtualAddr%PageSize);
+				int offset = virtAddress % PageSize;
+				unsigned int writtenSoFar = i - (noffH.code.virtualAddr % PageSize);
+				int location = noffH.code.inFileAddr + writtenSoFar;
 
-			//not at beginning of page
-			if (i % PageSize != 0) { //more data than can fit on page
-				if ((noffH.code.size - writtenSoFar) > (PageSize - (i % PageSize))) {
-					executable->ReadAt(&(buffer[offset]), (PageSize - (i % PageSize)), location);
-					synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-				} else {	//all data can fit on current page
-					executable->ReadAt(&(buffer[offset]), (noffH.code.size - writtenSoFar), location);
-					synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+				//not at beginning of page
+				if (i % PageSize != 0) { //more data than can fit on page
+					if ((noffH.code.size - writtenSoFar) > (PageSize - (i % PageSize))) {
+						executable->ReadAt(&(buffer[offset]), (PageSize - (i % PageSize)), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+					} else {	//all data can fit on current page
+						executable->ReadAt(&(buffer[offset]), (noffH.code.size - writtenSoFar), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+					}
+
+				} else { //starting at beginning of page
+					if ((noffH.code.size - writtenSoFar) > PageSize) {	//more data than can fit on page
+						executable->ReadAt(&(buffer[offset]), PageSize, (noffH.code.inFileAddr + writtenSoFar));
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+					} else {	//all data can fit on current page
+						executable->ReadAt(&(buffer[offset]), (noffH.code.size - writtenSoFar), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+					}
 				}
+			}
+		}
+		if (noffH.initData.size > 0) {
+				DEBUG('a', "Initializing data segment, at 0x%x, size %d\n", 
+			noffH.initData.virtualAddr, noffH.initData.size);
 
-			} else { //starting at beginning of page
-				if ((noffH.code.size - writtenSoFar) > PageSize) {	//more data than can fit on page
-					executable->ReadAt(&(buffer[offset]), PageSize, (noffH.code.inFileAddr + writtenSoFar));
-					synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-				} else {	//all data can fit on current page
-					executable->ReadAt(&(buffer[offset]), (noffH.code.size - writtenSoFar), location);
-					synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+			//TODO: Maybe clean this up a little
+			for (i=(noffH.initData.virtualAddr % PageSize); i < (unsigned int)(noffH.initData.size + (noffH.initData.virtualAddr % PageSize)); i+=(PageSize - (i % PageSize))) {
+				int virtAddress = (noffH.initData.virtualAddr + i) - (noffH.initData.virtualAddr%PageSize);
+				int offset = virtAddress % PageSize;
+				unsigned int writtenSoFar = i - (noffH.initData.virtualAddr % PageSize);
+				int location = noffH.initData.inFileAddr + writtenSoFar;
+
+				//not at beginning of page
+				if (i % PageSize != 0) { //more data than can fit on page
+					if ((noffH.initData.size - writtenSoFar) > (PageSize - (i % PageSize))) {
+						executable->ReadAt(&(buffer[offset]), (PageSize - (i % PageSize)), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+					} else {	//all data can fit on current page
+						executable->ReadAt(&(buffer[offset]), (noffH.initData.size - writtenSoFar), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+					}
+
+				} else { //starting at beginning of page
+					if ((noffH.initData.size - writtenSoFar) > PageSize) {	//more data than can fit on page
+						executable->ReadAt(&(buffer[offset]), PageSize, location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+					} else {	//all data can fit on current page
+						executable->ReadAt(&(buffer[offset]), (noffH.initData.size - writtenSoFar), location);
+						synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
+					}
 				}
 			}
 		}
 	}
-	if (noffH.initData.size > 0) {
-			DEBUG('a', "Initializing data segment, at 0x%x, size %d\n", 
-		noffH.initData.virtualAddr, noffH.initData.size);
 
-		//TODO: Maybe clean this up a little
-		for (i=(noffH.initData.virtualAddr % PageSize); i < (unsigned int)(noffH.initData.size + (noffH.initData.virtualAddr % PageSize)); i+=(PageSize - (i % PageSize))) {
-			int virtAddress = (noffH.initData.virtualAddr + i) - (noffH.initData.virtualAddr%PageSize);
-			int offset = virtAddress % PageSize;
-			unsigned int writtenSoFar = i - (noffH.initData.virtualAddr % PageSize);
-			int location = noffH.initData.inFileAddr + writtenSoFar;
-
-			//not at beginning of page
-			if (i % PageSize != 0) { //more data than can fit on page
-				if ((noffH.initData.size - writtenSoFar) > (PageSize - (i % PageSize))) {
-					executable->ReadAt(&(buffer[offset]), (PageSize - (i % PageSize)), location);
-					synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-				} else {	//all data can fit on current page
-					executable->ReadAt(&(buffer[offset]), (noffH.initData.size - writtenSoFar), location);
-					synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-				}
-
-			} else { //starting at beginning of page
-				if ((noffH.initData.size - writtenSoFar) > PageSize) {	//more data than can fit on page
-					executable->ReadAt(&(buffer[offset]), PageSize, location);
-					synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-				} else {	//all data can fit on current page
-					executable->ReadAt(&(buffer[offset]), (noffH.initData.size - writtenSoFar), location);
-					synchDisk->WriteSector(pageTable[virtAddress/PageSize].physicalPage, buffer);
-				}
-			}
-		}
+	if (strcmp(script, "#SCRIPT") == 0) {
+		processControlBlock->GetFDSet()->DeleteFD(0);
+		OpenFile *scriptFile = fileSystem->Open(tmp->GetName());
+		processControlBlock->GetFDSet()->AddFD(scriptFile);
+		fileManager->OpenFile(tmp->GetName());
 	}
-
 }
 
 void
@@ -476,6 +596,57 @@ AddrSpace::ClearPageTable()
 	for (unsigned int i=0;  i < numPages; i++) {
 		memoryManager->ClearPage(i, pageTable);
 	}
+}
+
+void
+AddrSpace::Checkpoint(OpenFile *file)
+{
+	char *buff = new(std::nothrow) char[20];
+	sprintf(buff, "%s", "#CHECK");
+	file->Write(buff, strlen(buff));
+	for (int i=0; i<NumTotalRegs; i++) {
+		int val = machine->ReadRegister(i);
+		sprintf(buff, "%d", val);
+		int len = strlen(buff);
+		for (int j=19; j>-1; j--) {
+			if (j-(19-len) < 0) {
+				buff[j] = '0';
+			} else {
+				buff[j] = buff[j-(19-len)];
+			}
+		}
+		if (buff[19-len] == '-') {
+			buff[19-len] = '0';
+			buff[0] = '-';
+		}
+		file->Write(buff, 20);
+		buff[19] = '\0';
+		for (int j=0; j<20; j++) {
+			buff[j] = '\0';
+		}
+	}
+	sprintf(buff, "%d", numPages);
+	int len = strlen(buff);
+	for (int j=19; j>-1; j--) {
+		if (j-(19-len) < 0) {
+			buff[j] = '0';
+		} else {
+			buff[j] = buff[j-(19-len)];
+		}
+	}
+	file->Write(buff, 20);
+
+	delete buff;
+	buff = new(std::nothrow) char[PageSize];
+	for (unsigned int i=0; i<numPages; i++) {
+		if (pageTable[i].valid) {
+			memcpy(buff, &(machine->mainMemory[pageTable[i].physicalPage*PageSize]), PageSize);
+		} else {
+			synchDisk->ReadSector(pageTable[i].physicalPage, buff);
+		}
+		file->Write(buff, PageSize);
+	}
+	delete buff;
 }
 
 int

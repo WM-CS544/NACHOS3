@@ -130,6 +130,14 @@ Dup:
 	syscall
 	j $31
 	.end Dup
+
+	.globl CheckPoint
+	.ent	CheckPoint
+CheckPoint:
+	addiu $2,$0,SC_Check
+	syscall
+	j $31
+	.end CheckPoint
 #endif
 
 /* dummy function to keep gcc happy */

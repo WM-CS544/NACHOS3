@@ -34,9 +34,14 @@ StartProcess(char *filename)
     space = new(std::nothrow) AddrSpace(executable);    
     currentThread->space = space;
 
+		char *check = new(std::nothrow) char[6];
+		executable->ReadAt(check, 6, 0);
+
     delete executable;			// close file
 
-    space->InitRegisters();		// set the initial register values
+		if (strcmp(check, "#CHECK") != 0) {
+    	space->InitRegisters();		// set the initial register values
+		}
     space->RestoreState();		// load page table register
 
     machine->Run();			// jump to the user progam
