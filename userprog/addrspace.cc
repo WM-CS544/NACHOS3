@@ -125,7 +125,6 @@ AddrSpace::AddrSpace(OpenFile *executable)
 		}
 
 	} else {
-		fprintf(stderr, "%s\n", script);
 		if (strcmp(script, "#SCRIPT") == 0) {
 			tmp = executable;
 			executable = fileSystem->Open((char *)shell);
