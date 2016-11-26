@@ -91,10 +91,11 @@ MemoryManager::KernelPage(AddrSpace *curSpace, unsigned int virtpn)
 			retval = 1;	//return one if faulted on page
 	} else {
 			lockPage = curSpace->GetPageTable()[virtpn].physicalPage;
-	}
 #ifndef RANDOM
-	AdjustLRU(lockPage);
+			AdjustLRU(lockPage);
 #endif
+	}
+
 	//lock the page
 	memInfo[lockPage].lockbit = 1;
 
