@@ -10,6 +10,9 @@ MemoryManager::MemoryManager(int numPages)
 	diskMap = new(std::nothrow) BitMap(NumSectors);	
 	memInfo = new(std::nothrow) memEntry[numPages];
 	lock = new(std::nothrow) Lock("memory manager lock");
+	for (int i=0; i<numPages; i++) {
+		lru[i] = i;
+	}
 }
 
 MemoryManager::~MemoryManager()
@@ -89,7 +92,9 @@ MemoryManager::KernelPage(AddrSpace *curSpace, unsigned int virtpn)
 	} else {
 			lockPage = curSpace->GetPageTable()[virtpn].physicalPage;
 	}
-
+#ifndef RANDOM
+	AdjustLRU(lockPage);
+#endif
 	//lock the page
 	memInfo[lockPage].lockbit = 1;
 
@@ -117,12 +122,23 @@ int
 MemoryManager::GetPageFromDisk(AddrSpace *curSpace, unsigned int virtpn)
 {
 	char *fromDisk = new(std::nothrow) char[PageSize];
+#ifndef RANDOM
+	int replace = 0;
+#endif
 
 	if (memoryMap->NumClear() <= 0) {
 		ReplacePage(FindPageToReplace());	
-	}
+#ifndef RANDOM
+		replace = 1;
+#endif
+	} 
 
 	int physPage = memoryMap->Find();
+#ifndef RANDOM
+	if (!replace) {
+		AdjustLRU(physPage);
+	}
+#endif
 	//if not valid then ppn = dsn
 	unsigned int disksn = curSpace->GetPageTable()[virtpn].physicalPage;
 	//read from disk and copy to physical memory
@@ -168,10 +184,45 @@ MemoryManager::ReplacePage(int toBeReplaced)
 unsigned int
 MemoryManager::FindPageToReplace()
 {
+#ifdef RANDOM
 	int page = rand()%NumPhysPages;
 	while (memInfo[page].lockbit) {
 		page = rand()%NumPhysPages;
 	}
 	return page;
+#else
+	int page = lru[0];
+	while (memInfo[page].lockbit) {
+		AdjustLRU(page);
+		page = lru[0];
+	}
+	AdjustLRU(page);
+	return page;
+#endif
+}
+
+void
+MemoryManager::AdjustLRU(int page)
+{
+	int index = FindIndexLRU(page);
+	int tmp = lru[index];
+
+	for (int i=index; i<(NumPhysPages-1); i++) {
+		lru[i] = lru[i+1];
+	}
+	lru[NumPhysPages-1] = tmp;
+}
+
+int
+MemoryManager::FindIndexLRU(int page)
+{
+	for (int i=0; i<NumPhysPages; i++) {
+		if (lru[i] == page) {
+			return i;
+		}
+	}
+	//page not in lru, shouldn't happen
+	ASSERT(0);
+	return -1;
 }
 #endif

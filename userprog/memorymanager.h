@@ -10,6 +10,8 @@
 #include "machine.h"
 #include "system.h"
 
+//#define RANDOM
+
 struct memEntry {
 	AddrSpace *addrspace;
 	unsigned int vpn;	//virtual page number
@@ -35,10 +37,13 @@ class  MemoryManager {
 		int GetPageFromDisk(AddrSpace *curSpace, unsigned int virtpn);
 		int ReplacePage(int toBeReplaced);
 		unsigned int FindPageToReplace();
+		void AdjustLRU(int page);
+		int FindIndexLRU(int page);
 		BitMap *memoryMap;
 		BitMap *diskMap;
 		memEntry *memInfo;
 		Lock *lock;
+		int lru[NumPhysPages];
 };
 
 #endif //MEMORY_MANAGER_H
