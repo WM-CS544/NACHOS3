@@ -13,6 +13,10 @@ MemoryManager::MemoryManager(int numPages)
 	for (int i=0; i<numPages; i++) {
 		lru[i] = i;
 	}
+	sharedList = new(std::nothrow) sharedEntry[NumSectors];
+	for (int j=0; j<NumSectors; j++) {
+		sharedList[j].head = NULL;
+	}
 }
 
 MemoryManager::~MemoryManager()
@@ -21,15 +25,17 @@ MemoryManager::~MemoryManager()
 	delete memoryMap;
 	delete lock;
 	delete [] memInfo;
+	delete [] sharedList;
 }
 
 //TODO:Check if find returns -1
 int
-MemoryManager::NewPage()
+MemoryManager::NewPage(AddrSpace *curSpace)
 {
 	lock->Acquire();
 
 	int pageNum = diskMap->Find();
+	AddSharedAddrspace(curSpace, pageNum);
 
 	lock->Release();
 
@@ -38,18 +44,17 @@ MemoryManager::NewPage()
 
 //TODO: Change this to clear based on pagetable
 void
-MemoryManager::ClearPage(int page, TranslationEntry *pageTable)
+MemoryManager::ClearPage(int page, TranslationEntry *pageTable, AddrSpace *curSpace)
 {
 	lock->Acquire();
 
 	//page is in physMem
 	if (pageTable[page].valid) {
-		ReplacePage(pageTable[page].physicalPage);
+		//ReplacePage(pageTable[page].physicalPage);
 	}
 
-	//page should not be empty if clearing it
-	ASSERT(diskMap->Test(pageTable[page].physicalPage));
-	diskMap->Clear(page);
+	//remove shared addrspace and clear disk if needed
+	RemoveSharedAddrspace(curSpace, pageTable[page].physicalPage);
 
 	lock->Release();
 }
@@ -119,6 +124,126 @@ MemoryManager::UnlockPage(AddrSpace *curSpace, unsigned int virtpn)
 	return 1;
 }
 
+void
+MemoryManager::AddSharedPage(AddrSpace *curSpace, unsigned int dsn)
+{
+	lock->Acquire();
+
+	AddSharedAddrspace(curSpace, dsn);
+
+	lock->Release();
+}
+
+void
+MemoryManager::UnSharePages(unsigned int vpn, unsigned int ppn, AddrSpace *curSpace)
+{
+	//lock creates situation where requested readonly page is now not in mem should fix and readd lock
+	//lock->Acquire();
+
+	addrspaceNode *curNode = sharedList[memInfo[ppn].dsn].head;
+
+	while (curNode != NULL) {
+		if (curNode->addrspace != curSpace) {
+			int newPage = diskMap->Find();
+			AddSharedAddrspace(curNode->addrspace, newPage);
+			curNode->addrspace->GetPageTable()[vpn].physicalPage = newPage;
+			curNode->addrspace->GetPageTable()[vpn].valid = false;
+			synchDisk->WriteSector(newPage, &(machine->mainMemory[ppn*PageSize]));
+		} else {
+			sharedList[memInfo[ppn].dsn].head = curNode;
+		}
+		curNode->addrspace->GetPageTable()[vpn].readOnly = false;
+		curNode = curNode->next;
+	}
+
+	//lock->Release();
+}
+
+void
+MemoryManager::AddSharedAddrspace(AddrSpace *curSpace, unsigned int dsn)
+{
+	//increment counter
+	sharedList[dsn].numShared ++;
+
+	//add new addspace to list
+	addrspaceNode *newNode = new(std::nothrow) addrspaceNode;
+	newNode->addrspace = curSpace;
+	newNode->next = NULL;
+
+	addrspaceNode *curNode = sharedList[dsn].head;
+	addrspaceNode *prevNode = NULL;
+
+	while (curNode != NULL) {
+		prevNode = curNode;
+		curNode = curNode->next;
+	}
+	//start of list
+	if (prevNode == NULL) {
+		sharedList[dsn].head = newNode;
+	} else {
+		prevNode->next = newNode;
+	}
+}
+
+void
+MemoryManager::RemoveSharedAddrspace(AddrSpace *curSpace, unsigned int dsn)
+{
+	//if only page using clear from map
+	if (sharedList[dsn].numShared == 1) {
+		//page should not be empty if clearing it
+		ASSERT(diskMap->Test(dsn));
+		diskMap->Clear(dsn);
+	}
+
+	//decrement counter
+	sharedList[dsn].numShared --;
+
+	addrspaceNode *curNode = sharedList[dsn].head;
+	addrspaceNode *prevNode = NULL;
+
+	while (curNode != NULL) {
+		if (curNode->addrspace == curSpace) {
+			//start of list
+			if (prevNode == NULL) {
+				sharedList[dsn].head = curNode->next;
+			} else {
+				prevNode->next = curNode->next;
+			}
+			return;
+		}
+		prevNode = curNode;
+		curNode = curNode->next;	
+	}
+	//if removing addrspace it should be in list
+	//ASSERT(0);
+}
+
+void
+MemoryManager::SharedPageToMem(unsigned int dsn, int ppn, unsigned int vpn)
+{
+	sharedList[dsn].ppn = ppn;
+	//validate all pagetables
+	addrspaceNode *curNode = sharedList[dsn].head;
+	while(curNode != NULL) {
+		curNode->addrspace->GetPageTable()[vpn].physicalPage = ppn;
+		curNode->addrspace->GetPageTable()[vpn].valid = 1;
+		curNode = curNode->next;
+	}
+}
+
+void
+MemoryManager::ReplaceSharedPage(unsigned int dsn, int ppn, unsigned int vpn)
+{
+	sharedList[dsn].ppn = -1;
+	//invalidate all pagetables
+	addrspaceNode *curNode = sharedList[dsn].head;
+	while(curNode != NULL) {
+		curNode->addrspace->GetPageTable()[vpn].physicalPage = dsn;
+		curNode->addrspace->GetPageTable()[vpn].valid = false;
+		curNode = curNode->next;
+	}
+}
+
 int
 MemoryManager::GetPageFromDisk(AddrSpace *curSpace, unsigned int virtpn)
 {
@@ -154,6 +279,9 @@ MemoryManager::GetPageFromDisk(AddrSpace *curSpace, unsigned int virtpn)
 	memInfo[physPage].dsn = disksn;
 	memInfo[physPage].lockbit = 0;
 
+	//update sharedPageList
+	SharedPageToMem(disksn, physPage, virtpn);
+
 	delete fromDisk;
 
 	return physPage;
@@ -173,7 +301,10 @@ MemoryManager::ReplacePage(int toBeReplaced)
 	synchDisk->WriteSector(curEntry.dsn, &(machine->mainMemory[toBeReplaced*PageSize]));
 	char *fromDisk = new(std::nothrow) char[PageSize];
 	synchDisk->ReadSector(curEntry.dsn, fromDisk);
-	
+
+	//invalidate for all shared pages
+	ReplaceSharedPage(curEntry.dsn, toBeReplaced, curEntry.vpn);
+
 	//free from memoryMap
 	//page should not be empty if clearing it
 	ASSERT(memoryMap->Test(toBeReplaced));

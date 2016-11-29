@@ -48,6 +48,8 @@ class AddrSpace {
 		int WriteByte(unsigned int va, char byte);
 		int GetPhysPageNum(unsigned int virtPageNum);
 		int GetPhysAddress(unsigned int va);
+
+		int *diskPages;
 #endif
 
   private:

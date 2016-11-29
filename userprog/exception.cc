@@ -187,6 +187,11 @@ ExceptionHandler(ExceptionType which)
     	memoryManager->MoveToMem(currentThread->space, machine->ReadRegister(BadVAddrReg)/PageSize);
 			stats->numPageFaults++;
     	break;
+    case ReadOnlyException:
+    	memoryManager->UnSharePages(machine->ReadRegister(BadVAddrReg)/PageSize, currentThread->space->GetPageTable()[machine->ReadRegister(BadVAddrReg)/PageSize].physicalPage, currentThread->space);
+    	//currentThread->space->GetPageTable()[machine->ReadRegister(BadVAddrReg)/PageSize].readOnly = false;
+    	//ASSERT(!currentThread->space->GetPageTable()[machine->ReadRegister(BadVAddrReg)/PageSize].readOnly);
+    	break;
 		default:
 			//exit with value of -1
 			machine->WriteRegister(4, -1);
@@ -581,6 +586,7 @@ void
 SysJoin()
 {
 	SpaceId pid = machine->ReadRegister(4);
+	pid = 2;
 	int retval = -1;
 	ChildNode *child = currentThread->space->GetProcessControlBlock()->GetChild(pid);
 	if (child != NULL) {

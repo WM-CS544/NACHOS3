@@ -36,7 +36,7 @@ CFLAGS = -G 0 -c $(INCDIR) -DCHANGED -nostartfiles
 
 all: halt shell matmult sort fileio fromcons hellocons hellofile newfork parent_child kid \
 	seq_child deepfork deepkid1 deepkid2 share sharekid maxfork arg_seq_child argtest argkid \
-	cat cp filesynch filesynchkid vmtorture qsort ckmatmult qmatmult Xkid
+	cat cp filesynch filesynchkid vmtorture qsort ckmatmult qmatmult Xkid cow cowwrite cownofork
 
 start.o: start.s ../userprog/syscall.h
 	$(CPP) $(CPPFLAGS) start.s > strt.s
@@ -222,4 +222,22 @@ Xkid.o: Xkid.c
 Xkid: Xkid.o start.o
 	$(LD) $(LDFLAGS) start.o Xkid.o -o Xkid.coff
 	../bin/coff2noff Xkid.coff Xkid 
+
+cow.o: cow.c
+	$(CC) $(CFLAGS) -c cow.c
+cow: cow.o start.o
+	$(LD) $(LDFLAGS) start.o cow.o -o cow.coff
+	../bin/coff2noff cow.coff cow 
+
+cowwrite.o: cowwrite.c
+	$(CC) $(CFLAGS) -c cowwrite.c
+cowwrite: cowwrite.o start.o
+	$(LD) $(LDFLAGS) start.o cowwrite.o -o cowwrite.coff
+	../bin/coff2noff cowwrite.coff cowwrite 
+
+cownofork.o: cownofork.c
+	$(CC) $(CFLAGS) -c cownofork.c
+cownofork: cownofork.o start.o
+	$(LD) $(LDFLAGS) start.o cownofork.o -o cownofork.coff
+	../bin/coff2noff cownofork.coff cownofork 
 

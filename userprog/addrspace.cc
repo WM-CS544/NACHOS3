@@ -102,13 +102,15 @@ AddrSpace::AddrSpace(OpenFile *executable)
 #ifndef USE_TLB
 	// first, set up the translation 
 		pageTable = new(std::nothrow) TranslationEntry[numPages];
+		diskPages = new(std::nothrow) int[numPages];
 		for (i = 0; i < numPages; i++) {
 			pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
-			pageTable[i].physicalPage = memoryManager->NewPage();
+			pageTable[i].physicalPage = memoryManager->NewPage(this);
+			diskPages[i] = pageTable[i].physicalPage;
 			pageTable[i].valid = false;
 			pageTable[i].use = false;
 			pageTable[i].dirty = false;
-			pageTable[i].readOnly = false;  // if the code segment was entirely on 
+			pageTable[i].readOnly = true;  // if the code segment was entirely on 
 							// a separate page, we could set its 
 							// pages to be read-only
 			ASSERT(pageTable[i].physicalPage != -1);
@@ -161,18 +163,20 @@ AddrSpace::AddrSpace(OpenFile *executable)
 #ifndef USE_TLB
 	// first, set up the translation 
 			pageTable = new(std::nothrow) TranslationEntry[numPages];
+			diskPages = new(std::nothrow) int[numPages];
 			for (i = 0; i < numPages; i++) {
 				pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
 #ifndef CHANGED
 				pageTable[i].physicalPage = i;
 #else
-				pageTable[i].physicalPage = memoryManager->NewPage();
+				pageTable[i].physicalPage = memoryManager->NewPage(this);
+				diskPages[i] = pageTable[i].physicalPage;
 				ASSERT(pageTable[i].physicalPage != -1);
 #endif
 				pageTable[i].valid = false;
 				pageTable[i].use = false;
 				pageTable[i].dirty = false;
-				pageTable[i].readOnly = false;  // if the code segment was entirely on 
+				pageTable[i].readOnly = true;  // if the code segment was entirely on 
 								// a separate page, we could set its 
 								// pages to be read-only
 			}
@@ -368,11 +372,16 @@ AddrSpace::AddrSpace(AddrSpace *parentSpace, int pid)
   pageTable = new(std::nothrow) TranslationEntry[numPages];
   for (unsigned int i = 0; i < numPages; i++) {
 		pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
-		pageTable[i].physicalPage = memoryManager->NewPage();
-		pageTable[i].valid = false;
+		if (parentSpace->GetPageTable()[i].valid) {
+			pageTable[i].physicalPage = parentSpace->GetPageTable()[i].physicalPage;
+		} else {
+			pageTable[i].physicalPage = parentSpace->diskPages[i];
+		}
+		memoryManager->AddSharedPage(this, parentSpace->diskPages[i]);
+		pageTable[i].valid = parentSpace->GetPageTable()[i].valid;
 		pageTable[i].use = false;
 		pageTable[i].dirty = false;
-		pageTable[i].readOnly = false;  // if the code segment was entirely on 
+		pageTable[i].readOnly = true;  // if the code segment was entirely on 
 																		// a separate page, we could set its 
 																		// pages to be read-only
 		ASSERT(pageTable[i].physicalPage != -1);
@@ -380,7 +389,7 @@ AddrSpace::AddrSpace(AddrSpace *parentSpace, int pid)
 #endif    
 
 	//copy pages to new addrspace
-	char *toWrite = new(std::nothrow) char[PageSize];
+	/*char *toWrite = new(std::nothrow) char[PageSize];
 	for (unsigned int i=0; i < numPages; i++) {
 		//page is in memory
 		if (parentSpace->GetPageTable()[i].valid) {
@@ -391,7 +400,7 @@ AddrSpace::AddrSpace(AddrSpace *parentSpace, int pid)
 		}
 		synchDisk->WriteSector(pageTable[i].physicalPage, toWrite);
 	}
-	delete toWrite;
+	delete toWrite;*/
 
 	processControlBlock = new(std::nothrow) ProcessControlBlock(parentSpace->GetProcessControlBlock(), parentSpace->GetProcessControlBlock()->GetFDSet(), pid);
 }
@@ -443,13 +452,15 @@ AddrSpace::Exec(OpenFile *executable) {
 #ifndef USE_TLB
 	// first, set up the translation 
 		pageTable = new(std::nothrow) TranslationEntry[numPages];
+		diskPages = new(std::nothrow) int[numPages];
 		for (i = 0; i < numPages; i++) {
 			pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
-			pageTable[i].physicalPage = memoryManager->NewPage();
+			pageTable[i].physicalPage = memoryManager->NewPage(this);
+			diskPages[i] = pageTable[i].physicalPage;
 			pageTable[i].valid = false;
 			pageTable[i].use = false;
 			pageTable[i].dirty = false;
-			pageTable[i].readOnly = false;  // if the code segment was entirely on 
+			pageTable[i].readOnly = true;  // if the code segment was entirely on 
 							// a separate page, we could set its 
 							// pages to be read-only
 			ASSERT(pageTable[i].physicalPage != -1);
@@ -495,13 +506,15 @@ AddrSpace::Exec(OpenFile *executable) {
 #ifndef USE_TLB
 	// first, set up the translation 
 		pageTable = new(std::nothrow) TranslationEntry[numPages];
+		diskPages = new(std::nothrow) int[numPages];
 		for (i = 0; i < numPages; i++) {
 			pageTable[i].virtualPage = i;	// for now, virtual page # = phys page #
-			pageTable[i].physicalPage = memoryManager->NewPage();
+			pageTable[i].physicalPage = memoryManager->NewPage(this);
+			diskPages[i] = pageTable[i].physicalPage;
 			pageTable[i].valid = false;
 			pageTable[i].use = false;
 			pageTable[i].dirty = false;
-			pageTable[i].readOnly = false;  // if the code segment was entirely on 
+			pageTable[i].readOnly = true;  // if the code segment was entirely on 
 							// a separate page, we could set its 
 							// pages to be read-only
 			ASSERT(pageTable[i].physicalPage != -1);
@@ -594,7 +607,7 @@ void
 AddrSpace::ClearPageTable()
 {
 	for (unsigned int i=0;  i < numPages; i++) {
-		memoryManager->ClearPage(i, pageTable);
+		memoryManager->ClearPage(i, pageTable, this);
 	}
 }
 
